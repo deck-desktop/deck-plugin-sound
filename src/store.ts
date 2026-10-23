@@ -22,8 +22,20 @@ export interface SoundSettings {
   showMic: boolean;
   /** Percent one wheel notch over the speaker changes. */
   step: 1 | 2 | 5;
+  /** Devices left out of the popover's lists, by id (one in use still shows). */
+  hidden: string[];
+  /** Names chosen for devices, by id, shown in place of Windows'. */
+  names: Record<string, string>;
+  /** Device ids in the order the lists show them; any not here follow, in Windows' order. */
+  order: string[];
 }
-export const DEFAULTS: SoundSettings = { chord: "ctrl+shift+m", notify: true, showNumber: true, showMic: true, step: 2 };
+export const DEFAULTS: SoundSettings = { chord: "ctrl+shift+m", notify: true, showNumber: true, showMic: true, step: 2, hidden: [], names: {}, order: [] };
+
+/** Devices in the order chosen in Settings. */
+export function ordered(list: AudioDevice[]): AudioDevice[] {
+  const at = (id: string) => { const i = settings.order.indexOf(id); return i < 0 ? Infinity : i; };
+  return list.map((d, i) => ({ d, i })).sort((a, b) => at(a.d.id) - at(b.d.id) || a.i - b.i).map((x) => x.d);
+}
 
 /** One app in the mixer: every process of one program, set together. */
 export interface App { name: string; pids: number[]; volume: number; muted: boolean; peak: number; icon?: string }
@@ -214,6 +226,11 @@ async function load() {
         showNumber: typeof raw.showNumber === "boolean" ? raw.showNumber : DEFAULTS.showNumber,
         showMic: typeof raw.showMic === "boolean" ? raw.showMic : DEFAULTS.showMic,
         step: raw.step === 1 || raw.step === 2 || raw.step === 5 ? raw.step : DEFAULTS.step,
+        hidden: Array.isArray(raw.hidden) ? raw.hidden.filter((x): x is string => typeof x === "string") : [],
+        order: Array.isArray(raw.order) ? raw.order.filter((x): x is string => typeof x === "string") : [],
+        names: raw.names && typeof raw.names === "object"
+          ? Object.fromEntries(Object.entries(raw.names).filter(([, v]) => typeof v === "string" && v.trim()))
+          : {},
       };
     }
   } catch (e) { console.warn("[sound] reading the settings failed", e); }

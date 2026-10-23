@@ -5,11 +5,11 @@
 // microphone mute shortcut that works in every app. Deck's sound capability does the work
 // (audioDevices and the rest, Core Audio underneath); this is the UI and the settings.
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { Check, ChevronDown, Headphones, Mic, MicOff, Volume1, Volume2, VolumeX } from "lucide-react";
+import { Check, ChevronDown, GripVertical, Headphones, Mic, MicOff, Settings2, Volume1, Volume2, VolumeX } from "lucide-react";
 import { PanelHead, Row, Segmented, StatusItem, StatusPopover, tone } from "deck-plugin-sdk/ui";
 import type { AudioDevice } from "deck-plugin-sdk/bridge";
 import {
-  defaultIn, defaultOut, get, getVersion, makeDefault, nudge, setAppMuted, setAppVolume, setMuted, setVolume,
+  defaultIn, defaultOut, get, getVersion, makeDefault, nudge, ordered, setAppMuted, setAppVolume, setMuted, setVolume,
   start, stop, subscribe, toggleMic, update, watchPopover, type App,
 } from "./store";
 
@@ -24,6 +24,8 @@ const pct = (v: number) => Math.round(v * 100);
 const short = (name: string) => split(name)[1];
 /** The part before the brackets ("Speakers", "Microphone Array"): what kind of device it is. */
 const kind = (name: string) => split(name)[0];
+/** A device as the popover names it: the name chosen in Settings, else the part in brackets. */
+const nameOf = (d: AudioDevice) => get().settings.names[d.id]?.trim() || short(d.name);
 /** A name as [kind, device] at its last bracket group, which may hold brackets of its own:
  *  "Speakers (Realtek(R) Audio)" is ["Speakers", "Realtek(R) Audio"]. No group: ["", name]. */
 function split(name: string): [string, string] {
@@ -86,7 +88,14 @@ function Panel() {
   return (
     <div className="pb-1">
       <style>{LEVEL_CSS}</style>
-      <PanelHead label="Sound" />
+      <div className="relative">
+        <PanelHead label="Sound" />
+        <button onClick={() => window.dispatchEvent(new CustomEvent("deck-navigate", { detail: "settings:plugin:sound" }))}
+          title="Sound settings" aria-label="Sound settings"
+          className="absolute right-2 top-2 grid size-6 place-items-center rounded text-text-muted transition-colors hover:bg-white/10 hover:text-text-primary">
+          <Settings2 size={13} />
+        </button>
+      </div>
       <Section title="Output" list={devices.filter((d) => d.flow === "out")} icon={<Headphones size={14} />} />
       <Section title="Input" list={devices.filter((d) => d.flow === "in")} icon={<Mic size={14} />} peak={inPeak} />
       {apps.length > 0 && (
@@ -116,6 +125,9 @@ function Section({ title, list, icon, peak }: { title: string; list: AudioDevice
   }, [open]);
   const d = list.find((x) => x.default);
   const what = title.toLowerCase();
+  // The list leaves out the devices hidden in Settings, unless one is the one in use.
+  const { hidden } = get().settings;
+  const choices = ordered(list).filter((x) => x.default || !hidden.includes(x.id));
   const MuteIcon = title === "Input" ? (d?.muted ? MicOff : Mic) : d?.muted ? VolumeX : Volume2;
   return (
     <div className="flex flex-col gap-1.5 px-3.5 pb-2.5 pt-1">
@@ -125,18 +137,19 @@ function Section({ title, list, icon, peak }: { title: string; list: AudioDevice
         className="flex h-8 w-full items-center gap-2 rounded-lg border bg-elev px-2.5 text-left text-[12.5px] text-text-secondary transition-colors hover:border-strong hover:text-text-primary"
         style={{ borderColor: open ? "var(--accent)" : "var(--border-subtle)" }}>
         <span className="shrink-0 text-text-muted">{icon}</span>
-        <span className="min-w-0 flex-1 truncate" title={d?.name}>{d ? short(d.name) : list.length ? "None chosen" : `No ${what} device`}</span>
+        <span className="min-w-0 flex-1 truncate" title={d?.name}>{d ? nameOf(d) : list.length ? "None chosen" : `No ${what} device`}</span>
         <ChevronDown size={13} className="shrink-0 text-text-muted transition-transform" style={{ transform: open ? "rotate(180deg)" : undefined }} />
       </button>
       {open && (
         <div role="listbox" className="absolute inset-x-0 top-full z-20 mt-1 flex flex-col gap-px rounded-[10px] border border-subtle bg-card p-1 shadow-2xl animate-[menu-in_110ms_ease-out]">
-          {list.map((x) => (
+          {choices.map((x) => (
             <button key={x.id} role="option" aria-selected={x.default} onClick={() => { setOpen(false); if (!x.default) void makeDefault(x); }}
               className="flex h-[30px] items-center gap-2 rounded-[6px] px-2 text-left text-[12.5px] transition-colors hover:bg-white/5"
               style={x.default ? { background: "var(--accent-soft)", color: "var(--text-primary)" } : { color: "var(--text-secondary)" }}>
-              <span className="min-w-0 flex-1 truncate" title={x.name}>{short(x.name)}</span>
+              <span className="min-w-0 flex-1 truncate" title={x.name}>{nameOf(x)}</span>
               <span className="shrink-0 text-[11px] text-text-muted">{kind(x.name)}</span>
-              {x.default && <Check size={13} className="shrink-0" />}
+              {/* A slot whether ticked or not, so the types line up. */}
+              <span className="grid w-[13px] shrink-0 place-items-center">{x.default && <Check size={13} />}</span>
             </button>
           ))}
         </div>
@@ -168,17 +181,22 @@ function Section({ title, list, icon, peak }: { title: string; list: AudioDevice
 function AppRow({ a }: { a: App }) {
   return (
     <div className="flex h-7 items-center gap-2">
-      {/* The app's own icon, its name the tooltip; a letter until the icon is read, or if it has none. */}
-      {a.icon
-        ? <img src={a.icon} alt={a.name} title={a.name} className="size-[18px] shrink-0" draggable={false} />
-        : <span role="img" aria-label={a.name} title={a.name} className="grid size-[18px] shrink-0 place-items-center rounded-[5px] bg-elev text-[10px] font-semibold text-text-secondary">{a.name[0]?.toUpperCase()}</span>}
-      <Level value={a.volume} muted={a.muted} label={`${a.name} volume`} onChange={(v) => setAppVolume(a, v)} />
-      <span className="w-8 shrink-0 text-right font-mono text-[11px] text-text-secondary">{pct(a.volume)}%</span>
-      <button onClick={() => setAppMuted(a, !a.muted)} title={a.muted ? `Unmute ${a.name}` : `Mute ${a.name}`} aria-label={a.muted ? `Unmute ${a.name}` : `Mute ${a.name}`}
-        aria-pressed={a.muted} className="grid size-5 shrink-0 place-items-center rounded transition-colors hover:bg-white/10"
-        style={{ color: a.muted ? RED : "var(--text-muted)" }}>
-        {a.muted ? <VolumeX size={13} /> : <Volume1 size={13} />}
+      {/* The app's own icon is its mute: a click mutes it, and a muted one carries a small badge in
+          its corner. The button is the size of the device rows' mute, so every slider lines up. */}
+      <button onClick={() => setAppMuted(a, !a.muted)} title={a.muted ? `${a.name}: muted. Click to unmute` : `${a.name}. Click to mute`}
+        aria-label={a.muted ? `Unmute ${a.name}` : `Mute ${a.name}`} aria-pressed={a.muted}
+        className="relative grid size-7 shrink-0 place-items-center rounded-md transition-colors hover:bg-white/10">
+        {a.icon
+          ? <img src={a.icon} alt="" className="size-[18px]" draggable={false} style={{ opacity: a.muted ? 0.45 : 1 }} />
+          : <span className="grid size-[18px] place-items-center rounded-[5px] bg-elev text-[10px] font-semibold text-text-secondary" style={{ opacity: a.muted ? 0.45 : 1 }}>{a.name[0]?.toUpperCase()}</span>}
+        {a.muted && (
+          <span className="absolute bottom-0.5 right-0.5 grid size-3 place-items-center rounded-full" style={{ background: RED, color: "#fff" }}>
+            <VolumeX size={8} strokeWidth={3} />
+          </span>
+        )}
       </button>
+      <Level value={a.volume} muted={a.muted} label={`${a.name} volume`} onChange={(v) => setAppVolume(a, v)} />
+      <span className="w-9 shrink-0 text-right font-mono text-[11px] text-text-secondary">{pct(a.volume)}%</span>
     </div>
   );
 }
@@ -265,6 +283,94 @@ export function Settings() {
           options={[{ value: "1", label: "1%" }, { value: "2", label: "2%" }, { value: "5", label: "5%" }]} layoutId="sound-step" />
       </div>
       <p className="text-[11px] text-text-muted">Picking a device in the footer makes it the default for everything, calls included.</p>
+      <Devices />
+    </div>
+  );
+}
+
+/** Each device: a name of your own for it, whether the footer's list offers it, and where in that
+ *  list it comes (dragged by its handle). */
+function Devices() {
+  const { devices, settings } = useSound();
+  const [drag, setDrag] = useState<{ id: string; over: string | null } | null>(null);
+  /** `id` moved to where `over` is, within its own direction; the rest keep their order. */
+  const drop = (flow: "out" | "in", id: string, over: string) => {
+    if (id === over) return;
+    const ids = ordered(devices.filter((d) => d.flow === flow)).map((d) => d.id).filter((x) => x !== id);
+    ids.splice(ids.indexOf(over) + (ordered(devices).findIndex((d) => d.id === id) < ordered(devices).findIndex((d) => d.id === over) ? 1 : 0), 0, id);
+    const other = settings.order.filter((x) => !ids.includes(x));
+    void update({ order: [...other, ...ids] });
+  };
+  return (
+    <div className="space-y-3 border-t border-subtle pt-3">
+      <div>
+        <div className="text-[12.5px] text-text-primary">Devices</div>
+        <div className="text-[11.5px] text-text-muted">Name a device your way, switch it off to leave it out of the list (the one in use always shows), or drag it into your own order.</div>
+      </div>
+      {(["out", "in"] as const).map((flow) => {
+        const list = ordered(devices.filter((d) => d.flow === flow));
+        return list.length > 0 && (
+          <div key={flow} className="space-y-1.5">
+            <div className="text-[12px] font-medium text-text-secondary">{flow === "out" ? "Output" : "Input"}</div>
+            {list.map((d) => (
+              <div key={d.id}
+                onDragOver={(e) => { if (drag && list.some((x) => x.id === drag.id)) { e.preventDefault(); if (drag.over !== d.id) setDrag({ ...drag, over: d.id }); } }}
+                onDrop={(e) => { e.preventDefault(); if (drag) drop(flow, drag.id, d.id); setDrag(null); }}
+                className="rounded-lg transition-shadow"
+                style={drag?.over === d.id && drag.id !== d.id ? { boxShadow: "0 0 0 1px var(--accent)" } : undefined}>
+                <DeviceRow d={d} dragging={drag?.id === d.id}
+                  onDragStart={() => setDrag({ id: d.id, over: null })} onDragEnd={() => setDrag(null)} />
+              </div>
+            ))}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function DeviceRow({ d, dragging, onDragStart, onDragEnd }: { d: AudioDevice; dragging: boolean; onDragStart: () => void; onDragEnd: () => void }) {
+  const { settings } = useSound();
+  // Typed into here, saved when the field is left or Enter is pressed: a save per keystroke would
+  // write the settings file for every letter.
+  const [name, setName] = useState(settings.names[d.id] ?? "");
+  const save = () => {
+    const names = { ...settings.names };
+    if (name.trim()) names[d.id] = name.trim(); else delete names[d.id];
+    if ((settings.names[d.id] ?? "") !== (names[d.id] ?? "")) void update({ names });
+  };
+  const shown = !settings.hidden.includes(d.id);
+  const [hover, setHover] = useState(false);
+  const toggle =() => void update({ hidden: shown ? [...settings.hidden, d.id] : settings.hidden.filter((x) => x !== d.id) });
+  return (
+    <div className="flex items-center gap-1.5" title={d.name} style={{ opacity: dragging ? 0.4 : 1 }}
+      onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
+      <span draggable onDragStart={(e) => { e.dataTransfer.effectAllowed = "move"; onDragStart(); }} onDragEnd={onDragEnd}
+        title="Drag to reorder" aria-hidden className="grid h-8 w-4 shrink-0 cursor-grab place-items-center text-text-muted hover:text-text-primary">
+        <GripVertical size={13} />
+      </span>
+      {/* One field: the name, then the device's type and its switch inside it. */}
+      <div className="flex h-8 min-w-0 flex-1 items-center gap-2.5 rounded-lg border border-subtle bg-elev pl-2.5 pr-2 transition-colors focus-within:border-[var(--accent)]">
+        <input value={name} onChange={(e) => setName(e.target.value)} onBlur={save}
+          onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+          placeholder={short(d.name)} aria-label={`Name for ${d.name}`} spellCheck={false}
+          className="min-w-0 flex-1 bg-transparent text-[12.5px] text-text-primary outline-none placeholder:text-text-muted"
+          style={{ opacity: shown ? 1 : 0.5 }} />
+        {/* Its type, and the way to use it: "Use" under the pointer, as picking it in the popover does. */}
+        {d.default
+          ? <span className="shrink-0 text-[11px] font-medium" style={{ color: "var(--accent)" }}>In use</span>
+          : <button onClick={() => void makeDefault(d)} title={`Use ${d.name} for apps and calls`}
+              className="shrink-0 rounded px-1 text-[11px] transition-colors hover:bg-white/10"
+              style={{ color: hover ? "var(--accent)" : "var(--text-muted)" }}>
+              {hover ? "Use" : kind(d.name)}
+            </button>}
+        <button role="switch" aria-checked={shown} aria-label={shown ? `Leave ${d.name} out of the list` : `Show ${d.name} in the list`}
+          title={shown ? "Shown in the list" : "Left out of the list"} onClick={toggle}
+          className="relative h-4 w-7 shrink-0 rounded-full transition-colors"
+          style={{ background: shown ? "var(--accent)" : "rgb(var(--overlay-rgb) / 0.2)" }}>
+          <span className="absolute top-0.5 size-3 rounded-full bg-white transition-[left] duration-150" style={{ left: shown ? 14 : 2 }} />
+        </button>
+      </div>
     </div>
   );
 }
