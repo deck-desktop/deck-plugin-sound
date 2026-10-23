@@ -65,9 +65,11 @@ async function readApps() {
     const list: AudioSession[] = await audioSessions();
     const by = new Map<string, App>();
     for (const s of list) {
-      const a = by.get(s.name);
+      // A program's file name ("hapster", "deck"), written as a name.
+      const name = s.name.charAt(0).toUpperCase() + s.name.slice(1);
+      const a = by.get(name);
       if (a) { a.pids.push(s.pid); a.peak = Math.max(a.peak, s.peak); }
-      else by.set(s.name, { name: s.name, pids: [s.pid], volume: s.volume, muted: s.muted, peak: s.peak });
+      else by.set(name, { name, pids: [s.pid], volume: s.volume, muted: s.muted, peak: s.peak });
     }
     // System sounds last; the rest by name, so rows do not jump about as levels change.
     const next = [...by.values()].sort((a, b) => (a.name === "System sounds" ? 1 : b.name === "System sounds" ? -1 : a.name.localeCompare(b.name)));

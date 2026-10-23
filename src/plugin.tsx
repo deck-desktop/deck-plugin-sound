@@ -19,8 +19,9 @@ export const dispose = stop;
 
 const RED = tone("red");
 const pct = (v: number) => Math.round(v * 100);
-/** "Speakers (Logitech PRO X Wireless Gaming Headset)" -> "Speakers". */
-const short = (name: string) => name.replace(/\s*\(.*\)\s*$/, "") || name;
+/** "Speakers (Logitech PRO X Wireless Gaming Headset)" -> "Logitech PRO X Wireless Gaming Headset":
+ *  Windows calls nearly every output "Speakers", so the part in brackets is what tells them apart. */
+const short = (name: string) => /\(([^()]+)\)\s*$/.exec(name)?.[1] ?? name;
 /** "ctrl+shift+m" as people write it: "Ctrl+Shift+M". */
 const chordLabel = (c: string) => c.split("+").map((p) => (p.length === 1 ? p.toUpperCase() : p[0].toUpperCase() + p.slice(1))).join("+");
 
