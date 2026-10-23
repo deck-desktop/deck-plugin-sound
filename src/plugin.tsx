@@ -56,7 +56,9 @@ export function Status() {
 
   return (
     <div className="flex items-center">
-      <span onWheel={(e) => { if (e.deltaY) nudge(e.deltaY < 0 ? 1 : -1); }}>
+      {/* The wheel over the speaker itself; the popover is drawn inside this span, and a scroll in
+          it is that slider's (Level), not the output's. */}
+      <span onWheel={(e) => { if (e.deltaY && !(e.target as Element).closest("[data-status-panel]")) nudge(e.deltaY < 0 ? 1 : -1); }}>
         <StatusPopover open={open} onToggle={() => setOpen((v) => !v)} onClose={() => setOpen(false)} width="w-[360px]"
           item={<StatusItem icon={<Icon />} color={out?.muted ? RED : "var(--text-secondary)"} label={label}
             title={out ? `${out.name}: ${out.muted ? "muted" : `${pct(out.volume)}%`}. Scroll to change the volume` : "No output device"} />}>
@@ -82,11 +84,7 @@ function Panel() {
       <Section title="Output" list={devices.filter((d) => d.flow === "out")} icon={<Headphones size={14} />} />
       <Section title="Input" list={devices.filter((d) => d.flow === "in")} icon={<Mic size={14} />} peak={inPeak} />
       {apps.length > 0 && (
-        <div className="mt-1 border-t border-subtle px-3.5 pb-1 pt-2">
-          <div className="mb-1 flex items-center gap-1.5">
-            <span className="text-[12px] font-medium text-text-secondary">Apps</span>
-            <span className="grid h-[18px] min-w-[18px] place-items-center rounded-full bg-elev px-1.5 text-[10.5px] text-text-secondary">{apps.length}</span>
-          </div>
+        <div className="mt-1 border-t border-subtle px-3.5 pb-1 pt-1.5">
           {apps.map((a) => <AppRow key={a.name} a={a} />)}
         </div>
       )}
@@ -196,6 +194,12 @@ function Level({ value, muted, label, onChange }: { value: number; muted: boolea
   return (
     <input type="range" min={0} max={100} value={pct(value)} aria-label={label}
       onChange={(e) => onChange(Number(e.target.value) / 100)}
+      // The wheel over a slider moves that slider, by the same step as over the speaker.
+      onWheel={(e) => {
+        if (!e.deltaY) return;
+        const step = get().settings.step;
+        onChange((Math.round(pct(value) / step) * step + (e.deltaY < 0 ? step : -step)) / 100);
+      }}
       className="snd-level min-w-0 flex-1" style={{ ["--fill" as string]: `${pct(value)}%`, opacity: muted ? 0.4 : 1 }} />
   );
 }
