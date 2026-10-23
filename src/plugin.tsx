@@ -4,7 +4,7 @@
 // output and input devices with their levels and the apps playing sound, a settings panel, and a
 // microphone mute shortcut that works in every app. Deck's sound capability does the work
 // (audioDevices and the rest, Core Audio underneath); this is the UI and the settings.
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Check, ChevronDown, Headphones, Mic, MicOff, Volume1, Volume2, VolumeX } from "lucide-react";
 import { PanelHead, Row, Segmented, StatusItem, StatusPopover, tone } from "deck-plugin-sdk/ui";
 import type { AudioDevice } from "deck-plugin-sdk/bridge";
@@ -21,7 +21,21 @@ const RED = tone("red");
 const pct = (v: number) => Math.round(v * 100);
 /** "Speakers (Logitech PRO X Wireless Gaming Headset)" -> "Logitech PRO X Wireless Gaming Headset":
  *  Windows calls nearly every output "Speakers", so the part in brackets is what tells them apart. */
-const short = (name: string) => /\(([^()]+)\)\s*$/.exec(name)?.[1] ?? name;
+const short = (name: string) => split(name)[1];
+/** The part before the brackets ("Speakers", "Microphone Array"): what kind of device it is. */
+const kind = (name: string) => split(name)[0];
+/** A name as [kind, device] at its last bracket group, which may hold brackets of its own:
+ *  "Speakers (Realtek(R) Audio)" is ["Speakers", "Realtek(R) Audio"]. No group: ["", name]. */
+function split(name: string): [string, string] {
+  const n = name.trimEnd();
+  if (!n.endsWith(")")) return ["", name];
+  let depth = 0;
+  for (let i = n.length - 1; i >= 0; i--) {
+    if (n[i] === ")") depth++;
+    else if (n[i] === "(" && --depth === 0) return i > 0 ? [n.slice(0, i).trim(), n.slice(i + 1, -1)] : ["", name];
+  }
+  return ["", name];
+}
 /** "ctrl+shift+m" as people write it: "Ctrl+Shift+M". */
 const chordLabel = (c: string) => c.split("+").map((p) => (p.length === 1 ? p.toUpperCase() : p[0].toUpperCase() + p.slice(1))).join("+");
 
@@ -64,6 +78,7 @@ function Panel() {
   const out = defaultOut();
   return (
     <div className="pb-1">
+      <style>{LEVEL_CSS}</style>
       <PanelHead label="Sound" />
       <Section title="Output" list={devices.filter((d) => d.flow === "out")} icon={<Headphones size={14} />} />
       <Section title="Input" list={devices.filter((d) => d.flow === "in")} icon={<Mic size={14} />} peak={inPeak} />
@@ -89,30 +104,43 @@ function Panel() {
 /** One direction: the default device (a click lists the others), its mute and its level. */
 function Section({ title, list, icon, peak }: { title: string; list: AudioDevice[]; icon: React.ReactNode; peak?: number }) {
   const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  // A click anywhere else closes the list (Escape closes the whole popover).
+  useEffect(() => {
+    if (!open) return;
+    const doc = box.current?.ownerDocument ?? document;
+    const onDown = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
+    doc.addEventListener("mousedown", onDown);
+    return () => doc.removeEventListener("mousedown", onDown);
+  }, [open]);
   const d = list.find((x) => x.default);
   const what = title.toLowerCase();
   const MuteIcon = title === "Input" ? (d?.muted ? MicOff : Mic) : d?.muted ? VolumeX : Volume2;
   return (
     <div className="flex flex-col gap-1.5 px-3.5 pb-2.5 pt-1">
       <span className="text-[12px] font-medium text-text-secondary">{title}</span>
-      <button onClick={() => setOpen((v) => !v)} aria-expanded={open} disabled={!list.length}
-        className="flex h-8 items-center gap-2 rounded-lg border border-subtle bg-elev px-2.5 text-left text-[12.5px] text-text-secondary transition-colors hover:border-strong hover:text-text-primary">
+      <div ref={box} className="relative">
+      <button onClick={() => setOpen((v) => !v)} aria-expanded={open} aria-haspopup="listbox" disabled={!list.length}
+        className="flex h-8 w-full items-center gap-2 rounded-lg border bg-elev px-2.5 text-left text-[12.5px] text-text-secondary transition-colors hover:border-strong hover:text-text-primary"
+        style={{ borderColor: open ? "var(--accent)" : "var(--border-subtle)" }}>
         <span className="shrink-0 text-text-muted">{icon}</span>
-        <span className="min-w-0 flex-1 truncate">{d?.name ?? (list.length ? "None chosen" : `No ${what} device`)}</span>
-        <ChevronDown size={13} className="shrink-0 text-text-muted" />
+        <span className="min-w-0 flex-1 truncate" title={d?.name}>{d ? short(d.name) : list.length ? "None chosen" : `No ${what} device`}</span>
+        <ChevronDown size={13} className="shrink-0 text-text-muted transition-transform" style={{ transform: open ? "rotate(180deg)" : undefined }} />
       </button>
       {open && (
-        <div className="flex flex-col gap-px rounded-[10px] border border-subtle bg-panel p-1">
+        <div role="listbox" className="absolute inset-x-0 top-full z-20 mt-1 flex flex-col gap-px rounded-[10px] border border-subtle bg-card p-1 shadow-2xl animate-[menu-in_110ms_ease-out]">
           {list.map((x) => (
-            <button key={x.id} onClick={() => { setOpen(false); if (!x.default) void makeDefault(x); }}
+            <button key={x.id} role="option" aria-selected={x.default} onClick={() => { setOpen(false); if (!x.default) void makeDefault(x); }}
               className="flex h-[30px] items-center gap-2 rounded-[6px] px-2 text-left text-[12.5px] transition-colors hover:bg-white/5"
               style={x.default ? { background: "var(--accent-soft)", color: "var(--text-primary)" } : { color: "var(--text-secondary)" }}>
-              <span className="min-w-0 flex-1 truncate" title={x.name}>{x.name}</span>
+              <span className="min-w-0 flex-1 truncate" title={x.name}>{short(x.name)}</span>
+              <span className="shrink-0 text-[11px] text-text-muted">{kind(x.name)}</span>
               {x.default && <Check size={13} className="shrink-0" />}
             </button>
           ))}
         </div>
       )}
+      </div>
       {d && (
         <div className="flex h-7 items-center gap-2">
           <button onClick={() => setMuted(d, !d.muted)} title={d.muted ? `Unmute ${what}` : `Mute ${what}`}
@@ -140,7 +168,7 @@ function AppRow({ a }: { a: App }) {
   return (
     <div className="flex h-7 items-center gap-2">
       <span aria-hidden className="grid size-[18px] shrink-0 place-items-center rounded-[5px] bg-elev text-[10px] font-semibold text-text-secondary">{a.name[0]?.toUpperCase()}</span>
-      <span className="w-[74px] shrink-0 truncate text-[12.5px] text-text-secondary" title={a.name}>{a.name}</span>
+      <span className="w-24 shrink-0 truncate text-[12.5px] text-text-secondary" title={a.name}>{a.name}</span>
       <Level value={a.volume} muted={a.muted} label={`${a.name} volume`} onChange={(v) => setAppVolume(a, v)} />
       <span className="w-8 shrink-0 text-right font-mono text-[11px] text-text-secondary">{pct(a.volume)}%</span>
       <button onClick={() => setAppMuted(a, !a.muted)} title={a.muted ? `Unmute ${a.name}` : `Mute ${a.name}`} aria-label={a.muted ? `Unmute ${a.name}` : `Mute ${a.name}`}
@@ -152,12 +180,24 @@ function AppRow({ a }: { a: App }) {
   );
 }
 
+/** The slider's look: a thin track filled in the accent up to the value, a small white thumb. A
+ *  stylesheet of the plugin's own rather than Tailwind classes, which only exist in a Deck built
+ *  after they were written. */
+const LEVEL_CSS = `
+.snd-level{-webkit-appearance:none;appearance:none;height:12px;margin:0;cursor:pointer;outline:none;background:transparent}
+.snd-level::-webkit-slider-runnable-track{height:4px;border-radius:999px;
+  background:linear-gradient(to right,var(--accent) var(--fill),rgb(var(--overlay-rgb) / .12) var(--fill))}
+.snd-level::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:12px;height:12px;margin-top:-4px;border-radius:50%;
+  background:#f8fafc;box-shadow:0 0 0 3px rgb(0 0 0 / .35);transition:transform .1s}
+.snd-level:hover::-webkit-slider-thumb{transform:scale(1.15)}
+.snd-level:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 3px var(--accent)}`;
+
 /** A level slider, 0 to 100, in the accent; dimmed while muted. */
 function Level({ value, muted, label, onChange }: { value: number; muted: boolean; label: string; onChange: (v: number) => void }) {
   return (
     <input type="range" min={0} max={100} value={pct(value)} aria-label={label}
       onChange={(e) => onChange(Number(e.target.value) / 100)}
-      className="h-1 min-w-0 flex-1 cursor-pointer" style={{ accentColor: "var(--accent)", opacity: muted ? 0.4 : 1 }} />
+      className="snd-level min-w-0 flex-1" style={{ ["--fill" as string]: `${pct(value)}%`, opacity: muted ? 0.4 : 1 }} />
   );
 }
 
