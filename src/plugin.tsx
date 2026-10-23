@@ -54,24 +54,30 @@ export function Status() {
   const Icon = silent ? VolumeX : out.volume < 0.5 ? Volume1 : Volume2;
   const label = !out ? "No output" : settings.showNumber ? (out.muted ? "Muted" : `${pct(out.volume)}%`) : "";
 
+  // The speaker and the microphone are one item, and the popover opens over both: anchored to the
+  // pair's edge, it stays put when either one's label changes ("Muted").
   return (
-    <div className="flex items-center">
-      {/* The wheel over the speaker itself; the popover is drawn inside this span, and a scroll in
-          it is that slider's (Level), not the output's. */}
-      <span onWheel={(e) => { if (e.deltaY && !(e.target as Element).closest("[data-status-panel]")) nudge(e.deltaY < 0 ? 1 : -1); }}>
-        <StatusPopover open={open} onToggle={() => setOpen((v) => !v)} onClose={() => setOpen(false)} width="w-[360px]"
-          item={<StatusItem icon={<Icon />} color={out?.muted ? RED : "var(--text-secondary)"} label={label}
-            title={out ? `${out.name}: ${out.muted ? "muted" : `${pct(out.volume)}%`}. Scroll to change the volume` : "No output device"} />}>
-          <Panel />
-        </StatusPopover>
-      </span>
-      {settings.showMic && mic && (
-        <StatusItem icon={mic.muted ? <MicOff /> : <Mic />} color={mic.muted ? RED : "var(--text-secondary)"}
-          label={mic.muted ? "Muted" : ""}
-          title={`${mic.name}: ${mic.muted ? "muted" : "on"}. Click to ${mic.muted ? "unmute" : "mute"}${settings.chord ? ` (${chordLabel(settings.chord)})` : ""}`}
-          onClick={() => void toggleMic()} />
-      )}
-    </div>
+    <StatusPopover open={open} onToggle={() => setOpen((v) => !v)} onClose={() => setOpen(false)} width="w-[360px]"
+      item={
+        <div className={"flex items-center rounded-[4px]" + (open ? " bg-white/[0.08]" : "")}>
+          {/* The wheel over the speaker itself. */}
+          <span onWheel={(e) => { if (e.deltaY) nudge(e.deltaY < 0 ? 1 : -1); }}>
+            <StatusItem icon={<Icon />} color={out?.muted ? RED : "var(--text-secondary)"} label={label}
+              title={out ? `${out.name}: ${out.muted ? "muted" : `${pct(out.volume)}%`}. Scroll to change the volume` : "No output device"} />
+          </span>
+          {settings.showMic && mic && (
+            // A click on the microphone mutes it rather than opening the popover.
+            <span onClick={(e) => e.stopPropagation()}>
+              <StatusItem icon={mic.muted ? <MicOff /> : <Mic />} color={mic.muted ? RED : "var(--text-secondary)"}
+                label={mic.muted ? "Muted" : ""}
+                title={`${mic.name}: ${mic.muted ? "muted" : "on"}. Click to ${mic.muted ? "unmute" : "mute"}${settings.chord ? ` (${chordLabel(settings.chord)})` : ""}`}
+                onClick={() => void toggleMic()} />
+            </span>
+          )}
+        </div>
+      }>
+      <Panel />
+    </StatusPopover>
   );
 }
 
