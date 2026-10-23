@@ -75,7 +75,6 @@ export function Status() {
 
 function Panel() {
   const { devices, apps, inPeak, settings } = useSound();
-  const out = defaultOut();
   return (
     <div className="pb-1">
       <style>{LEVEL_CSS}</style>
@@ -87,15 +86,13 @@ function Panel() {
           <div className="mb-1 flex items-center gap-1.5">
             <span className="text-[12px] font-medium text-text-secondary">Apps</span>
             <span className="grid h-[18px] min-w-[18px] place-items-center rounded-full bg-elev px-1.5 text-[10.5px] text-text-secondary">{apps.length}</span>
-            <span className="flex-1" />
-            {out && <span className="truncate text-[11px] text-text-muted">playing through {short(out.name)}</span>}
           </div>
           {apps.map((a) => <AppRow key={a.name} a={a} />)}
         </div>
       )}
-      <p className="mt-1.5 border-t border-subtle px-3.5 pb-1 pt-2 text-[11px] leading-snug text-text-muted">
-        Scroll on the speaker to change the volume.
-        {settings.chord && <> <span className="font-mono text-text-secondary">{chordLabel(settings.chord)}</span> mutes the microphone from any app.</>}
+      <p className="mt-1.5 truncate border-t border-subtle px-3.5 pb-1 pt-2 text-[11px] text-text-muted">
+        Scroll the speaker for volume.
+        {settings.chord && <> <span className="font-mono text-text-secondary">{chordLabel(settings.chord)}</span> mutes the mic.</>}
       </p>
     </div>
   );
@@ -167,8 +164,10 @@ function Section({ title, list, icon, peak }: { title: string; list: AudioDevice
 function AppRow({ a }: { a: App }) {
   return (
     <div className="flex h-7 items-center gap-2">
-      <span aria-hidden className="grid size-[18px] shrink-0 place-items-center rounded-[5px] bg-elev text-[10px] font-semibold text-text-secondary">{a.name[0]?.toUpperCase()}</span>
-      <span className="w-24 shrink-0 truncate text-[12.5px] text-text-secondary" title={a.name}>{a.name}</span>
+      {/* The app's own icon, its name the tooltip; a letter until the icon is read, or if it has none. */}
+      {a.icon
+        ? <img src={a.icon} alt={a.name} title={a.name} className="size-[18px] shrink-0" draggable={false} />
+        : <span role="img" aria-label={a.name} title={a.name} className="grid size-[18px] shrink-0 place-items-center rounded-[5px] bg-elev text-[10px] font-semibold text-text-secondary">{a.name[0]?.toUpperCase()}</span>}
       <Level value={a.volume} muted={a.muted} label={`${a.name} volume`} onChange={(v) => setAppVolume(a, v)} />
       <span className="w-8 shrink-0 text-right font-mono text-[11px] text-text-secondary">{pct(a.volume)}%</span>
       <button onClick={() => setAppMuted(a, !a.muted)} title={a.muted ? `Unmute ${a.name}` : `Mute ${a.name}`} aria-label={a.muted ? `Unmute ${a.name}` : `Mute ${a.name}`}

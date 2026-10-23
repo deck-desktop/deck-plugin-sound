@@ -5,7 +5,7 @@
 // settings panel is not mounted, and both read the same devices. Started at import, stopped by
 // `stop` (the plugin's dispose), so a reload does not leave a second poll or a second listener.
 import {
-  audioDevices, audioPeak, audioSessions, audioSessionSet, audioSetDefault, audioSetMute, audioSetVolume,
+  audioDevices, audioIcon, audioPeak, audioSessions, audioSessionSet, audioSetDefault, audioSetMute, audioSetVolume,
   configRead, configWrite, notifyOs, shortcutClear, shortcutSet,
   type AudioDevice, type AudioSession,
 } from "deck-plugin-sdk/bridge";
@@ -26,7 +26,20 @@ export interface SoundSettings {
 export const DEFAULTS: SoundSettings = { chord: "ctrl+shift+m", notify: true, showNumber: true, showMic: true, step: 2 };
 
 /** One app in the mixer: every process of one program, set together. */
-export interface App { name: string; pids: number[]; volume: number; muted: boolean; peak: number }
+export interface App { name: string; pids: number[]; volume: number; muted: boolean; peak: number; icon?: string }
+
+/** Each app's icon as an object URL, read once per app; null when it has none (System sounds). */
+const icons = new Map<string, string | null>();
+function iconFor(name: string, pid: number) {
+  if (icons.has(name)) return;
+  icons.set(name, null);
+  if (!pid) return;
+  void audioIcon(pid, 32).then((png) => {
+    icons.set(name, URL.createObjectURL(new Blob([png.slice()], { type: "image/png" })));
+    apps = apps.map((a) => (a.name === name ? { ...a, icon: icons.get(name) ?? undefined } : a));
+    emit();
+  }, () => { icons.delete(name); }); // asked again at the next read: a program just starting may not open yet
+}
 
 const CONFIG = "settings";
 const SHORTCUT = "sound:mic";
@@ -69,7 +82,8 @@ async function readApps() {
       const name = s.name.charAt(0).toUpperCase() + s.name.slice(1);
       const a = by.get(name);
       if (a) { a.pids.push(s.pid); a.peak = Math.max(a.peak, s.peak); }
-      else by.set(name, { name, pids: [s.pid], volume: s.volume, muted: s.muted, peak: s.peak });
+      else by.set(name, { name, pids: [s.pid], volume: s.volume, muted: s.muted, peak: s.peak, icon: icons.get(name) ?? undefined });
+      iconFor(name, s.pid);
     }
     // System sounds last; the rest by name, so rows do not jump about as levels change.
     const next = [...by.values()].sort((a, b) => (a.name === "System sounds" ? 1 : b.name === "System sounds" ? -1 : a.name.localeCompare(b.name)));
