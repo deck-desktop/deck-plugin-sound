@@ -1,0 +1,17 @@
+{
+  "name": "sound",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "deck-plugin build",
+    "dev": "deck-plugin dev",
+    "install-local": "deck-plugin install"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "deck-plugin-sdk": "file:../../deck/sdk",
+    "lucide-react": "^1.61.0",
+    "react": "^19.3.1",
+    "@tauri-apps/api": "^2.11.1"
+  }
+}

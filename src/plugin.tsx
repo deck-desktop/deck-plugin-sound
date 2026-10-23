@@ -1,0 +1,228 @@
+// Sound — the PC's volume, devices and apps, from Deck's footer.
+//
+// No tab: a footer readout (the speaker, and the microphone beside it) whose popover holds the
+// output and input devices with their levels and the apps playing sound, a settings panel, and a
+// microphone mute shortcut that works in every app. Deck's sound capability does the work
+// (audioDevices and the rest, Core Audio underneath); this is the UI and the settings.
+import { useEffect, useState, useSyncExternalStore } from "react";
+import { Check, ChevronDown, Headphones, Mic, MicOff, Volume1, Volume2, VolumeX } from "lucide-react";
+import { PanelHead, Row, Segmented, StatusItem, StatusPopover, tone } from "deck-plugin-sdk/ui";
+import type { AudioDevice } from "deck-plugin-sdk/bridge";
+import {
+  defaultIn, defaultOut, get, getVersion, makeDefault, nudge, setAppMuted, setAppVolume, setMuted, setVolume,
+  start, stop, subscribe, toggleMic, update, watchPopover, type App,
+} from "./store";
+
+start();
+/** Called by Deck before a reload re-imports this plugin: the poll, the listener and the shortcut go. */
+export const dispose = stop;
+
+const RED = tone("red");
+const pct = (v: number) => Math.round(v * 100);
+/** "Speakers (Logitech PRO X Wireless Gaming Headset)" -> "Speakers". */
+const short = (name: string) => name.replace(/\s*\(.*\)\s*$/, "") || name;
+/** "ctrl+shift+m" as people write it: "Ctrl+Shift+M". */
+const chordLabel = (c: string) => c.split("+").map((p) => (p.length === 1 ? p.toUpperCase() : p[0].toUpperCase() + p.slice(1))).join("+");
+
+function useSound() {
+  useSyncExternalStore(subscribe, getVersion);
+  return get();
+}
+
+/** The footer: the speaker (click for the popover, wheel for the volume) and the microphone. */
+export function Status() {
+  const { settings } = useSound();
+  const [open, setOpen] = useState(false);
+  useEffect(() => { watchPopover(open); return () => watchPopover(false); }, [open]);
+  const out = defaultOut(), mic = defaultIn();
+  const silent = !out || out.muted || out.volume === 0;
+  const Icon = silent ? VolumeX : out.volume < 0.5 ? Volume1 : Volume2;
+  const label = !out ? "No output" : settings.showNumber ? (out.muted ? "Muted" : `${pct(out.volume)}%`) : "";
+
+  return (
+    <div className="flex items-center">
+      <span onWheel={(e) => { if (e.deltaY) nudge(e.deltaY < 0 ? 1 : -1); }}>
+        <StatusPopover open={open} onToggle={() => setOpen((v) => !v)} onClose={() => setOpen(false)} width="w-[360px]"
+          item={<StatusItem icon={<Icon />} color={out?.muted ? RED : "var(--text-secondary)"} label={label}
+            title={out ? `${out.name}: ${out.muted ? "muted" : `${pct(out.volume)}%`}. Scroll to change the volume` : "No output device"} />}>
+          <Panel />
+        </StatusPopover>
+      </span>
+      {settings.showMic && mic && (
+        <StatusItem icon={mic.muted ? <MicOff /> : <Mic />} color={mic.muted ? RED : "var(--text-secondary)"}
+          label={mic.muted ? "Muted" : ""}
+          title={`${mic.name}: ${mic.muted ? "muted" : "on"}. Click to ${mic.muted ? "unmute" : "mute"}${settings.chord ? ` (${chordLabel(settings.chord)})` : ""}`}
+          onClick={() => void toggleMic()} />
+      )}
+    </div>
+  );
+}
+
+function Panel() {
+  const { devices, apps, inPeak, settings } = useSound();
+  const out = defaultOut();
+  return (
+    <div className="pb-1">
+      <PanelHead label="Sound" />
+      <Section title="Output" list={devices.filter((d) => d.flow === "out")} icon={<Headphones size={14} />} />
+      <Section title="Input" list={devices.filter((d) => d.flow === "in")} icon={<Mic size={14} />} peak={inPeak} />
+      {apps.length > 0 && (
+        <div className="mt-1 border-t border-subtle px-3.5 pb-1 pt-2">
+          <div className="mb-1 flex items-center gap-1.5">
+            <span className="text-[12px] font-medium text-text-secondary">Apps</span>
+            <span className="grid h-[18px] min-w-[18px] place-items-center rounded-full bg-elev px-1.5 text-[10.5px] text-text-secondary">{apps.length}</span>
+            <span className="flex-1" />
+            {out && <span className="truncate text-[11px] text-text-muted">playing through {short(out.name)}</span>}
+          </div>
+          {apps.map((a) => <AppRow key={a.name} a={a} />)}
+        </div>
+      )}
+      <p className="mt-1.5 border-t border-subtle px-3.5 pb-1 pt-2 text-[11px] leading-snug text-text-muted">
+        Scroll on the speaker to change the volume.
+        {settings.chord && <> <span className="font-mono text-text-secondary">{chordLabel(settings.chord)}</span> mutes the microphone from any app.</>}
+      </p>
+    </div>
+  );
+}
+
+/** One direction: the default device (a click lists the others), its mute and its level. */
+function Section({ title, list, icon, peak }: { title: string; list: AudioDevice[]; icon: React.ReactNode; peak?: number }) {
+  const [open, setOpen] = useState(false);
+  const d = list.find((x) => x.default);
+  const what = title.toLowerCase();
+  const MuteIcon = title === "Input" ? (d?.muted ? MicOff : Mic) : d?.muted ? VolumeX : Volume2;
+  return (
+    <div className="flex flex-col gap-1.5 px-3.5 pb-2.5 pt-1">
+      <span className="text-[12px] font-medium text-text-secondary">{title}</span>
+      <button onClick={() => setOpen((v) => !v)} aria-expanded={open} disabled={!list.length}
+        className="flex h-8 items-center gap-2 rounded-lg border border-subtle bg-elev px-2.5 text-left text-[12.5px] text-text-secondary transition-colors hover:border-strong hover:text-text-primary">
+        <span className="shrink-0 text-text-muted">{icon}</span>
+        <span className="min-w-0 flex-1 truncate">{d?.name ?? (list.length ? "None chosen" : `No ${what} device`)}</span>
+        <ChevronDown size={13} className="shrink-0 text-text-muted" />
+      </button>
+      {open && (
+        <div className="flex flex-col gap-px rounded-[10px] border border-subtle bg-panel p-1">
+          {list.map((x) => (
+            <button key={x.id} onClick={() => { setOpen(false); if (!x.default) void makeDefault(x); }}
+              className="flex h-[30px] items-center gap-2 rounded-[6px] px-2 text-left text-[12.5px] transition-colors hover:bg-white/5"
+              style={x.default ? { background: "var(--accent-soft)", color: "var(--text-primary)" } : { color: "var(--text-secondary)" }}>
+              <span className="min-w-0 flex-1 truncate" title={x.name}>{x.name}</span>
+              {x.default && <Check size={13} className="shrink-0" />}
+            </button>
+          ))}
+        </div>
+      )}
+      {d && (
+        <div className="flex h-7 items-center gap-2">
+          <button onClick={() => setMuted(d, !d.muted)} title={d.muted ? `Unmute ${what}` : `Mute ${what}`}
+            aria-label={d.muted ? `Unmute ${what}` : `Mute ${what}`} aria-pressed={d.muted}
+            className="grid size-7 shrink-0 place-items-center rounded-md transition-colors hover:bg-white/10"
+            style={d.muted ? { color: RED, background: `color-mix(in srgb, ${RED} 14%, transparent)` } : { color: "var(--text-secondary)" }}>
+            <MuteIcon size={15} />
+          </button>
+          <div className="flex min-w-0 flex-1 flex-col justify-center gap-1">
+            <Level value={d.volume} muted={d.muted} label={`${title} volume`} onChange={(v) => setVolume(d, v)} />
+            {peak !== undefined && (
+              <span className="block h-[3px] overflow-hidden rounded-full bg-elev" role="img" aria-label="Microphone level">
+                <span className="block h-full rounded-full transition-[width] duration-150" style={{ width: `${d.muted ? 0 : Math.min(100, peak * 140)}%`, background: tone("emerald") }} />
+              </span>
+            )}
+          </div>
+          <span className="w-9 shrink-0 text-right font-mono text-[11px] text-text-secondary">{pct(d.volume)}%</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AppRow({ a }: { a: App }) {
+  return (
+    <div className="flex h-7 items-center gap-2">
+      <span aria-hidden className="grid size-[18px] shrink-0 place-items-center rounded-[5px] bg-elev text-[10px] font-semibold text-text-secondary">{a.name[0]?.toUpperCase()}</span>
+      <span className="w-[74px] shrink-0 truncate text-[12.5px] text-text-secondary" title={a.name}>{a.name}</span>
+      <Level value={a.volume} muted={a.muted} label={`${a.name} volume`} onChange={(v) => setAppVolume(a, v)} />
+      <span className="w-8 shrink-0 text-right font-mono text-[11px] text-text-secondary">{pct(a.volume)}%</span>
+      <button onClick={() => setAppMuted(a, !a.muted)} title={a.muted ? `Unmute ${a.name}` : `Mute ${a.name}`} aria-label={a.muted ? `Unmute ${a.name}` : `Mute ${a.name}`}
+        aria-pressed={a.muted} className="grid size-5 shrink-0 place-items-center rounded transition-colors hover:bg-white/10"
+        style={{ color: a.muted ? RED : "var(--text-muted)" }}>
+        {a.muted ? <VolumeX size={13} /> : <Volume1 size={13} />}
+      </button>
+    </div>
+  );
+}
+
+/** A level slider, 0 to 100, in the accent; dimmed while muted. */
+function Level({ value, muted, label, onChange }: { value: number; muted: boolean; label: string; onChange: (v: number) => void }) {
+  return (
+    <input type="range" min={0} max={100} value={pct(value)} aria-label={label}
+      onChange={(e) => onChange(Number(e.target.value) / 100)}
+      className="h-1 min-w-0 flex-1 cursor-pointer" style={{ accentColor: "var(--accent)", opacity: muted ? 0.4 : 1 }} />
+  );
+}
+
+/** The settings panel, in this plugin's row in Settings › Plugins. */
+export function Settings() {
+  const { settings, shortcutError } = useSound();
+  const [recording, setRecording] = useState(false);
+
+  // While recording, the next chord with Ctrl or Alt is the shortcut; Escape cancels. Taken in the
+  // capture phase, before Deck's own keys see it.
+  useEffect(() => {
+    if (!recording) return;
+    const onKey = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.key === "Escape") { setRecording(false); return; }
+      if (["Control", "Shift", "Alt", "Meta"].includes(e.key)) return;
+      if (!e.ctrlKey && !e.altKey) return;   // without Ctrl or Alt it would be typed into every app
+      const key = e.code.startsWith("Key") ? e.code.slice(3).toLowerCase() : e.code.startsWith("Digit") ? e.code.slice(5) : e.key.toLowerCase();
+      const chord = [e.ctrlKey && "ctrl", e.altKey && "alt", e.shiftKey && "shift", key].filter(Boolean).join("+");
+      setRecording(false);
+      void update({ chord });
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [recording]);
+
+  const secondary = "h-8 rounded-lg border border-subtle bg-elev px-3 text-[12px] text-text-secondary transition-colors hover:border-strong hover:text-text-primary";
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="text-[12.5px] text-text-primary">Microphone mute shortcut</div>
+          <div className="text-[11.5px] text-text-muted">Works in every app, with Deck in the background too.</div>
+          {shortcutError && <div className="mt-0.5 text-[11.5px]" style={{ color: RED }}>{shortcutError}</div>}
+        </div>
+        <span className="inline-flex h-8 items-center rounded-lg border bg-elev px-3 font-mono text-[11.5px] text-text-primary"
+          style={{ borderColor: recording ? "var(--accent)" : "var(--border-subtle)" }}>
+          {recording ? "Press a shortcut…" : settings.chord ? chordLabel(settings.chord) : "None"}
+        </span>
+        <button onClick={() => setRecording((v) => !v)} className={secondary}>{recording ? "Cancel" : "Change"}</button>
+        {settings.chord && !recording && <button onClick={() => void update({ chord: "" })} className={secondary}>Remove</button>}
+      </div>
+      <Row title="Say when the shortcut mutes it" desc="A Windows notification while Deck is not in front. The footer shows it either way."
+        on={settings.notify} onChange={(v) => void update({ notify: v })} />
+      <Row title="Show the volume as a number" desc="Off, the speaker icon alone."
+        on={settings.showNumber} onChange={(v) => void update({ showNumber: v })} />
+      <Row title="Show the microphone" desc="Its own icon beside the speaker; a click mutes it."
+        on={settings.showMic} onChange={(v) => void update({ showMic: v })} />
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="text-[12.5px] text-text-primary">Scroll step</div>
+          <div className="text-[11.5px] text-text-muted">How much one notch of the wheel over the speaker changes.</div>
+        </div>
+        <Segmented value={String(settings.step)} onChange={(v) => void update({ step: Number(v) as 1 | 2 | 5 })}
+          options={[{ value: "1", label: "1%" }, { value: "2", label: "2%" }, { value: "5", label: "5%" }]} layoutId="sound-step" />
+      </div>
+      <p className="text-[11px] text-text-muted">Picking a device in the footer makes it the default for everything, calls included.</p>
+    </div>
+  );
+}
+
+/** Command palette entries. */
+export function commands() {
+  return [
+    { id: "mic", title: "Sound: mute or unmute the microphone", run: () => void toggleMic() },
+    { id: "mute", title: "Sound: mute or unmute the output", run: () => { const d = defaultOut(); if (d) setMuted(d, !d.muted); } },
+  ];
+}

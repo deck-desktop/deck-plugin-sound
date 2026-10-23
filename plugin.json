@@ -1,0 +1,12 @@
+{
+  "id": "sound",
+  "name": "Sound",
+  "description": "Volume, speakers and microphone, and each app's level, from the footer; a microphone mute shortcut that works in every app.",
+  "icon": "Volume2",
+  "color": "#38bdf8",
+  "version": "1.0.0",
+  "minDeck": "1.11.0",
+  "permissions": [
+    "system"
+  ]
+}
