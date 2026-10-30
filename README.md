@@ -4,6 +4,8 @@ Your PC's sound from Deck's footer: the volume, which speakers and microphone ar
 app's own level, and a shortcut that mutes the microphone from any app. It adds a speaker (and a
 microphone) to the footer; there is no tab to open.
 
+![Sound](docs/screenshot.png)
+
 ## What it does
 
 - **The speaker in the footer** shows the volume. Scroll on it to turn it up or down (1, 2 or 5%
