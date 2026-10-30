@@ -8,10 +8,11 @@
     "install-local": "deck-plugin install"
   },
   "devDependencies": {
+    "@tauri-apps/api": "^2.11.1",
     "@types/react": "^19.3.0",
     "deck-plugin-sdk": "^1.10.3",
     "lucide-react": "^1.61.0",
     "react": "^19.3.1",
-    "@tauri-apps/api": "^2.11.1"
+    "typescript": "~5.8.3"
   }
 }
