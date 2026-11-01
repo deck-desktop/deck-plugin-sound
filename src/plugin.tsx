@@ -268,7 +268,7 @@ export function Settings() {
         <button onClick={() => setRecording((v) => !v)} className={secondary}>{recording ? "Cancel" : "Change"}</button>
         {settings.chord && !recording && <button onClick={() => void update({ chord: "" })} className={secondary}>Remove</button>}
       </div>
-      <Row title="Say when the shortcut mutes it" desc="A Windows notification while Deck is not in front. The footer shows it either way."
+      <Row title="Say when the shortcut mutes it" desc="A system notification while Deck is not in front. The footer shows it either way."
         on={settings.notify} onChange={(v) => void update({ notify: v })} />
       <Row title="Show the volume as a number" desc="Off, the speaker icon alone."
         on={settings.showNumber} onChange={(v) => void update({ showNumber: v })} />

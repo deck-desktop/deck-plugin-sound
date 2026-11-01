@@ -6,9 +6,6 @@
   "color": "#38bdf8",
   "version": "1.0.1",
   "minDeck": "1.10.3",
-  "platforms": [
-    "windows"
-  ],
   "permissions": [
     "system"
   ]

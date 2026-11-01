@@ -14,7 +14,7 @@ import { listen } from "deck-plugin-sdk/event";
 export interface SoundSettings {
   /** The system-wide microphone mute, as Deck writes chords ("ctrl+shift+m"). "" for none. */
   chord: string;
-  /** A Windows notification when the shortcut mutes or unmutes, while Deck is not in front. */
+  /** A system notification when the shortcut mutes or unmutes, while Deck is not in front. */
   notify: boolean;
   /** The volume as a number beside the speaker; off, the icon alone. */
   showNumber: boolean;
