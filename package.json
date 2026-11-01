@@ -10,7 +10,7 @@
   "devDependencies": {
     "@tauri-apps/api": "^2.11.1",
     "@types/react": "^19.3.0",
-    "deck-plugin-sdk": "^1.13.0",
+    "deck-plugin-sdk": "^1.15.0",
     "lucide-react": "^1.61.0",
     "react": "^19.3.1",
     "typescript": "~5.8.3"
